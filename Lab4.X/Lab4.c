@@ -2,17 +2,21 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define _XTAL_FREQ 4700000UL   // Frecuencia para delays y TMR0 1 Hz
+#define _XTAL_FREQ 8000000UL   // Oscilador interno a 8 MHz
 
 // ==================== CONFIG ====================
 #pragma config WDT=OFF
 #pragma config LVP=OFF
 #pragma config PBADEN=OFF
 #pragma config MCLRE=ON
-#pragma config FOSC=HS
+#pragma config FOSC=INTOSCIO_EC   // Oscilador interno, RA6/RA7 como I/O
 
 // ===== Parámetros =====
 #define BEEP_PERIOD_US 250u
+#define BEEP_SHORT_MS   80u
+#define BEEP_LONG_MS   1000u
+#define ON  1u
+#define OFF 0u
 
 // ===== I/O =====
 // LED blink (RA1) y buzzer (RA2)
@@ -31,7 +35,7 @@
 #define LCD_EN_TRIS TRISA5
 #define LCD_EN_LAT  LATA5
 #define LCD_D_TRIS  TRISD
-#define LCD_D_LAT   LATD  // RD4..RD7
+#define LCD_D_LAT   LATD  // RD4..RD7 (LCD) y RD0..RD3 (7-seg)
 
 // ---- Teclado 4x4 en PORTB ----
 // Filas: RB0..RB3 (salidas); Columnas: RB4..RB7 (entradas con pull-up)
@@ -39,9 +43,15 @@
 #define KB_ROWS_LAT  LATB
 #define KB_COL_MASK  0xF0    // columnas RB7..RB4
 
-// ===== TMR0 preloads (1 Hz en RA1, toggle cada 0.5 s) =====
-#define TMR0_PRELOAD_H           0x70
-#define TMR0_PRELOAD_L           0x91
+// ---- RGB (RE0=B, RE1=G, RE2=R) común cátodo ----
+#define RGB_R_LAT LATE1
+#define RGB_G_LAT LATE0
+#define RGB_B_LAT LATE2
+
+// ===== TMR0: 1 Hz (toggle cada 0.5 s) con Fosc=8 MHz, prescaler 1:16 =====
+// Tick = Fosc/4/16 = 125 kHz -> 8 us; 0.5 s / 8us = 62500; preload = 65536-62500 = 3036 = 0x0BDC
+#define TMR0_PRELOAD_H  0x0B
+#define TMR0_PRELOAD_L  0xDC
 
 // ===== Estado / Teclado =====
 volatile uint8_t started = 0;
@@ -56,6 +66,7 @@ static uint8_t input_digits = 0;  // 0,1,2
 static uint8_t input_val    = 0;  // 0..99
 
 // ===== Prototipos =====
+void clock_init_8mhz(void);
 void tmr0_start(void);
 void beep_ms(uint16_t ms);
 
@@ -68,7 +79,7 @@ void lcd_print(const char *s);
 static void lcd_print2d(uint8_t v);
 
 // Teclado
-char keypad_map_to_char(uint8_t k);  // a ?0?..?9?,?A?,?B?,?C?,?D?, ?*?, ?#?
+char keypad_map_to_char(uint8_t k);
 
 // UI
 void ui_show_welcome(void);
@@ -83,6 +94,12 @@ bool validate_target(uint8_t v);
 void reset_counter_only(void);
 void reset_all_to_input(void);
 
+// Indicadores (Lab3)
+void sevenseg_bcd(uint8_t d);      // RD0..RD3
+void rgb_set(uint8_t r, uint8_t g, uint8_t b);
+void set_rgb_by_decena(uint8_t d);
+static inline void indicators_from_count(uint8_t c);
+
 // ==================== ISR (baja prioridad) ====================
 void __interrupt(low_priority) low_isr(void){
     // --- PORTB change: teclado ---
@@ -90,25 +107,25 @@ void __interrupt(low_priority) low_isr(void){
         Tecla = 0;
 
         // Barrido por filas (modificando SOLO nibble bajo)
-        KB_ROWS_LAT = (KB_ROWS_LAT & 0xF0) | 0b00001110; // Fila 1 activa
+        KB_ROWS_LAT = (KB_ROWS_LAT & 0xF0) | 0b00001110; // F1
         if(RB4==0) Tecla=1;
         else if(RB5==0) Tecla=2;
         else if(RB6==0) Tecla=3;
         else if(RB7==0) Tecla=4;
         else{
-            KB_ROWS_LAT = (KB_ROWS_LAT & 0xF0) | 0b00001101; // Fila 2
+            KB_ROWS_LAT = (KB_ROWS_LAT & 0xF0) | 0b00001101; // F2
             if(RB4==0) Tecla=5;
             else if(RB5==0) Tecla=6;
             else if(RB6==0) Tecla=7;
             else if(RB7==0) Tecla=8;
             else{
-                KB_ROWS_LAT = (KB_ROWS_LAT & 0xF0) | 0b00001011; // Fila 3
+                KB_ROWS_LAT = (KB_ROWS_LAT & 0xF0) | 0b00001011; // F3
                 if(RB4==0) Tecla=9;
                 else if(RB5==0) Tecla=10;
                 else if(RB6==0) Tecla=11;
                 else if(RB7==0) Tecla=12;
                 else{
-                    KB_ROWS_LAT = (KB_ROWS_LAT & 0xF0) | 0b00000111; // Fila 4
+                    KB_ROWS_LAT = (KB_ROWS_LAT & 0xF0) | 0b00000111; // F4
                     if(RB4==0) Tecla=13;
                     else if(RB5==0) Tecla=14;
                     else if(RB6==0) Tecla=15;
@@ -117,10 +134,10 @@ void __interrupt(low_priority) low_isr(void){
             }
         }
 
-        // Reposo: filas en 0 (para que próxima pulsación baje columna y dispare RBIF)
+        // Reposo: filas en 0 (para que próxima pulsación baje columna)
         KB_ROWS_LAT = (KB_ROWS_LAT & 0xF0) | 0x00;
 
-        __delay_ms(12);     // antirrebote simple (como el demo)
+        __delay_ms(12);     // antirrebote simple
         (void)PORTB;        // limpia mismatch
         INTCONbits.RBIF = 0;
     }
@@ -136,22 +153,32 @@ void __interrupt(low_priority) low_isr(void){
 
 // ==================== MAIN ====================
 void main(void){
-    // Todo digital
+    // Todo digital (deshabilita entradas analógicas)
     ADCON1 = 0x0F;
+
+    // Oscilador interno a 8 MHz
+    clock_init_8mhz();
 
     // RA: LED, buzzer, LCD RS/EN
     TRISA &= ~((1<<1)|(1<<2)|(1<<4)|(1<<5)); // RA1,RA2,RA4,RA5 salidas
     LATA  &= ~((1<<1)|(1<<2)|(1<<4)|(1<<5));
+
     // RC1 sensor
     COUNTER_TRIS = 1;
 
-    // PORTD para LCD D4..D7 (salidas)
-    LCD_D_TRIS &= 0x0F;  // RD7..RD4 = 0
+    // PORTD: RD4..RD7 (LCD) y RD0..RD3 (7seg) salidas
+    TRISD = 0x00;
+    sevenseg_bcd(0);        // 7-seg en 0
 
     // PORTB: columnas in (RB4..RB7), filas out (RB0..RB3)
     TRISB = 0b11110000;
     KB_ROWS_LAT = (KB_ROWS_LAT & 0xF0) | 0x00; // filas en 0 (reposo)
     INTCON2bits.RBPU = 0;   // pull-ups internos activos (columnas)
+
+    // RGB RE0..RE2 salidas, apagado
+    TRISE = 0b1000;         // RE3=MCLR, RE2..RE0 salidas
+    LATE  &= 0b1000;
+    rgb_set(OFF,OFF,OFF);
 
     // Prioridades e interrupciones
     RCONbits.IPEN   = 1;    // prioridades
@@ -175,16 +202,18 @@ void main(void){
     target = 0; count = 0; input_digits = 0; input_val = 0;
 
     ui_show_welcome();
-    __delay_ms(5000);
+    __delay_ms(2000);
 
-    reset_all_to_input();
+    reset_all_to_input();   // 00 en 7-seg, RGB negro, LCD pidiendo objetivo
     ui_show_input();
 
     uint8_t last_rc1 = 1;
 
     while(1){
+        // EMERGENCIA: solo sale con MCLR (reinicio de hardware)
         if (emg_latched){
             ui_show_emergency();
+            rgb_set(ON,OFF,OFF);     // rojo fijo
             __delay_ms(40);
             continue;
         }
@@ -194,11 +223,10 @@ void main(void){
             char kc = keypad_map_to_char(Tecla);
             Tecla = 0;
 
-            // STOP (B) = EMG latcheada
+            // STOP (B) = EMG latcheada (solo MCLR limpia)
             if (kc == 'B'){ emg_latched = 1; continue; }
 
             if (!started && !finished){
-                // Ingreso de objetivo
                 if (kc >= '0' && kc <= '9'){
                     if (input_digits < 2){
                         input_val = (uint8_t)(input_val*10 + (kc - '0'));
@@ -210,32 +238,40 @@ void main(void){
                         input_digits--; input_val /= 10;
                         ui_show_input_value(input_val, input_digits);
                     } else { beep_ms(70); }
-                } else if (kc == 'A'){ // OK
+                } else if (kc == 'A'){ // OK -> validar y comenzar
                     if (validate_target(input_val)){
                         target = input_val; count = 0;
                         started = 1; finished = 0;
+                        indicators_from_count(0);
+                        set_rgb_by_decena(0);
                         ui_show_counting();
                     } else {
                         lcd_clear(); lcd_print("Objetivo inval.");
                         lcd_gotoxy(0,1); lcd_print("Rango 1..59");
-                        beep_ms(200); __delay_ms(900);
+                        beep_ms(200); __delay_ms(600);
                         ui_show_input();
                         input_digits = 0; input_val = 0;
                     }
                 } else if (kc == '*'){ // RST en input = limpiar entrada
                     input_digits = 0; input_val = 0; ui_show_input();
-                } // '#' en input: no-op
+                }
             }
             else if (started && !finished){
                 if (kc == '*'){       // RST: reiniciar conteo a 0
-                    reset_counter_only(); ui_show_counting();
+                    reset_counter_only();
+                    indicators_from_count(0);
+                    set_rgb_by_decena(0);
+                    ui_show_counting();
                 } else if (kc == '#'){ // END: abortar y volver a pedir objetivo
-                    reset_all_to_input(); ui_show_input();
+                    reset_all_to_input();
+                    ui_show_input();
                 }
             }
             else if (finished){
-                if (kc == 'A' || kc == '*' || kc == '#'){
-                    reset_all_to_input(); ui_show_input();
+                // Al terminar SOLO OK(A) o RST(*) reinician (END ya NO)
+                if (kc == 'A' || kc == '*'){
+                    reset_all_to_input();
+                    ui_show_input();
                 }
             }
         }
@@ -243,22 +279,41 @@ void main(void){
         // Sensor conteo RC1 (flanco 1->0)
         uint8_t rc1 = BTN_RC1_PORT;
         if (started && !finished && (last_rc1==1 && rc1==0)){
-            if (count < 59) count++;
-            ui_show_counting();
-            if (target && count >= target){
-                finished = 1; started = 0; ui_show_finished();
+            if (count < target){
+                count++;
+
+                // Indicadores Lab3
+                indicators_from_count(count);
+
+                // beep corto en múltiplos de 10 (10,20,...)
+                if ((count % 10u) == 0u) beep_ms(BEEP_SHORT_MS);
+
+                ui_show_counting();
+
+                if (count >= target){
+                    finished = 1; started = 0;
+                    ui_show_finished();    // beep largo aquí
+                }
             }
             __delay_ms(30); // antirrebote
         }
         last_rc1 = rc1;
 
-        __delay_ms(8);
+        __delay_ms(6);
     }
+}
+
+// ==================== Reloj interno ====================
+void clock_init_8mhz(void){
+    // IRCF=111 -> 8 MHz; SCS=10 -> usar oscilador interno
+    OSCCONbits.IRCF = 0b111;
+    OSCCONbits.SCS  = 0b10;
 }
 
 // ==================== TMR0 ====================
 void tmr0_start(void){
-    T0CON = 0b00000011; // 16 bits, clk interno, prescaler 1:16
+    // 16 bits, clk interno, prescaler 1:16
+    T0CON = 0b00000011;
     TMR0H = TMR0_PRELOAD_H;
     TMR0L = TMR0_PRELOAD_L;
     INTCON2bits.TMR0IP = 0; // baja prioridad
@@ -285,13 +340,11 @@ static void lcd_cmd(uint8_t c){ lcd_write(c,0); if(c==0x01||c==0x02) __delay_ms(
 void lcd_init(void){
     __delay_ms(20);
     LCD_RS_LAT=0; LCD_EN_LAT=0;
-
     // 4-bit init
     lcd_write4(0x03); __delay_ms(5);
     lcd_write4(0x03); __delay_us(150);
     lcd_write4(0x03); __delay_us(150);
     lcd_write4(0x02); __delay_us(150);
-
     lcd_cmd(0x28); // 4-bit, 2 líneas, 5x8
     lcd_cmd(0x08); // display off
     lcd_cmd(0x01); // clear
@@ -325,28 +378,28 @@ void ui_show_welcome(void){
 }
 void ui_show_input(void){
     lcd_clear();
-    lcd_print("Piezas a contar:");
+    lcd_print("Count:");
     lcd_gotoxy(0,1); lcd_print("Rango 1..59");
 }
 void ui_show_input_value(uint8_t val, uint8_t digits){
     lcd_clear();
-    lcd_print("Piezas a contar: ");
+    lcd_print("Count: ");
     if (digits==0){ lcd_putc('-'); lcd_putc('-'); }
     else if (digits==1){ lcd_putc('0'+(val%10)); }
     else { lcd_print2d(val); }
-    lcd_gotoxy(0,1); lcd_print("OK=Comenzar  SUPR=Eliminar");
+    lcd_gotoxy(0,1); lcd_print("OK=Start  SUPR=Delete");
 }
 void ui_show_counting(void){
     lcd_clear();
-    lcd_print("Piezas faltantes: "); uint8_t r=(target>count)?(target-count):0; lcd_print2d(r);
-    lcd_gotoxy(0,1);
-    lcd_print("Cuenta objetivo:");  lcd_print2d(target);
+    uint8_t r=(target>count)?(target-count):0;
+    lcd_print("Remaining: "); lcd_print2d(r);
+    lcd_gotoxy(0,1); lcd_print("Goal:");  lcd_print2d(target);
 }
 void ui_show_finished(void){
     lcd_clear();
     lcd_print(">> Objetivo OK <<");
-    lcd_gotoxy(0,1); lcd_print("OK=Nueva cuenta, RST/*, END/#");
-    beep_ms(400);
+    lcd_gotoxy(0,1); lcd_print("OK/RST= New count");
+    beep_ms(BEEP_LONG_MS);  // zumbido largo SOLO al terminar
 }
 void ui_show_emergency(void){
     lcd_clear();
@@ -358,6 +411,36 @@ void ui_show_emergency(void){
 bool validate_target(uint8_t v){ return (v>=1 && v<=59); }
 void reset_counter_only(void){ count=0; finished=0; }
 void reset_all_to_input(void){
-    started=0; finished=0; emg_latched=0;
-    target=0; count=0; input_digits=0; input_val=0;
+    started=0; finished=0; // emg_latched NO se limpia aquí
+    target=0; count=0;
+    indicators_from_count(0);  // 00 y RGB negro
+    rgb_set(OFF,OFF,OFF);
+}
+
+// ===== Indicadores estilo Lab3 =====
+void sevenseg_bcd(uint8_t d){
+    uint8_t v = (d & 0x0F);               // 0..9
+    LCD_D_LAT = (LCD_D_LAT & 0xF0) | v;   // RD0..RD3 = BCD
+}
+void rgb_set(uint8_t r, uint8_t g, uint8_t b){
+    RGB_R_LAT = r ? 1 : 0;
+    RGB_G_LAT = g ? 1 : 0;
+    RGB_B_LAT = b ? 1 : 0;
+}
+void set_rgb_by_decena(uint8_t d){
+    switch (d % 6u){
+        case 0: rgb_set(ON,OFF,ON); break;   // magenta (R+B)
+        case 1: rgb_set(OFF,OFF,ON); break;  // azul (B)
+        case 2: rgb_set(OFF,ON,ON); break;   // cian (G+B)
+        case 3: rgb_set(OFF,ON,OFF); break;  // verde (G)
+        case 4: rgb_set(ON,ON,OFF); break;   // amarillo (R+G)
+        default: rgb_set(ON,ON,ON); break;   // blanco (R+G+B)
+    }
+}
+static inline void indicators_from_count(uint8_t c){
+    uint8_t u = c % 10u;
+    uint8_t d = c / 10u;      // 0..5
+    sevenseg_bcd(u);
+    if (started || c>0) set_rgb_by_decena(d);
+    else                rgb_set(OFF,OFF,OFF);
 }
