@@ -1,446 +1,449 @@
 #include <xc.h>
-#include <stdint.h>
-#include <stdbool.h>
+#define _XTAL_FREQ 1000000 //Definir la constante para el cálculo de retardos   
+#include "LibLCDXC8.h" //Incluir libreria propia
+#pragma config FOSC=INTOSC_EC //Configurar el reloj interno
+#pragma config WDT=OFF //Desactivar el perro guardian
+#pragma config LVP=OFF //Programar el PIC
 
-#define _XTAL_FREQ 8000000UL   // Oscilador interno a 8 MHz
+//DECLARACIÓN DE VARIABLES 
+unsigned char Corazon[8] = {
+    0b01010,  //  * * 
+    0b11111,  // *****
+    0b11111,  // *****
+    0b11111,  // *****
+    0b01110,  //  *** 
+    0b00100,  //   *  
+    0b00000,  //      
+    0b00000
+};
 
-// ==================== CONFIG ====================
-#pragma config WDT=OFF
-#pragma config LVP=OFF
-#pragma config PBADEN=OFF
-#pragma config MCLRE=ON
-#pragma config FOSC=INTOSCIO_EC   // Oscilador interno, RA6/RA7 como I/O
+unsigned char RayaAlPiso[]={
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b11111}; // Carácter nuevo
 
-// ===== Parámetros =====
-#define BEEP_PERIOD_US 250u
-#define BEEP_SHORT_MS   80u
-#define BEEP_LONG_MS   1000u
-#define ON  1u
-#define OFF 0u
+unsigned int Supercontador; //Contador global de las piezas
+unsigned int contador; //Contador unidades (siete segmentos)
+unsigned int contadorRGB; //Contador decenas (led rgb)
+unsigned char posicion; // Posicion del número ingresado por el usuario (unidades o decenas)
+unsigned char editor; // Variable para habilitar la escritura en el lcd del usuario 
+unsigned int Objetivo; // Valor meta de las piezas a contar 
+unsigned char salir; // Variable para salir del ciclo de conteo
+unsigned char Tecla; // Tecla presionada en el teclado
+unsigned char Pulsado; //Variable para evitar conteo infinito
+unsigned char Inactividad; //Variable para inactividad
 
-// ===== I/O =====
-// LED blink (RA1) y buzzer (RA2)
-#define CLK_TRIS  TRISA1
-#define CLK_LAT   LATA1
-#define BUZZ_TRIS TRISA2
-#define BUZZ_LAT  LATA2
+//DECLARACIÓN DE FUNCIONES 
+void __interrupt()ISR(void);
+void ConfigVariables(void);
+void Bienvenida(void);
+void PreguntaAlUsuario(void);
+void ConfigPregunta(void);
+void Borrar(void);
 
-// Sensor conteo (RC1)
-#define COUNTER_TRIS  TRISC1
-#define BTN_RC1_PORT  RC1
 
-// ---- LCD 16x2 (4 bits): D4..D7=RD4..RD7, RS=RA4, EN=RA5 ----
-#define LCD_RS_TRIS TRISA4
-#define LCD_RS_LAT  LATA4
-#define LCD_EN_TRIS TRISA5
-#define LCD_EN_LAT  LATA5
-#define LCD_D_TRIS  TRISD
-#define LCD_D_LAT   LATD  // RD4..RD7 (LCD) y RD0..RD3 (7-seg)
+void main (void){
+    //CONFIGURACION DE LOS VALORES INICIALES DE LAS VARIABLES
+    ConfigVariables();
+    editor=0;
+    // CONFIGURACIÓN DE LOS PUERTOS
+    ADCON1=0b001111; //Quital las funciones analogas de los pines RA0-RA4, RB0-RB4 , RE0-RE2  
 
-// ---- Teclado 4x4 en PORTB ----
-// Filas: RB0..RB3 (salidas); Columnas: RB4..RB7 (entradas con pull-up)
-#define KB_ROWS_TRIS TRISB
-#define KB_ROWS_LAT  LATB
-#define KB_COL_MASK  0xF0    // columnas RB7..RB4
+    // Pines para el RGB
+    TRISE=0; // Todos los pines del puerto E son salidas digitales
+    LATE=0b00000111; // Todos los pines de salida del puerto E en 0
 
-// ---- RGB (RE0=B, RE1=G, RE2=R) común cátodo ----
-#define RGB_R_LAT LATE1
-#define RGB_G_LAT LATE0
-#define RGB_B_LAT LATE2
+    // Pines para el Siete segmentos
+    TRISD=0; // Todos los pines del puerto E son salidas digitales
+    LATD=contador; // El puerto es igual a el valor del contador 
 
-// ===== TMR0: 1 Hz (toggle cada 0.5 s) con Fosc=8 MHz, prescaler 1:16 =====
-// Tick = Fosc/4/16 = 125 kHz -> 8 us; 0.5 s / 8us = 62500; preload = 65536-62500 = 3036 = 0x0BDC
-#define TMR0_PRELOAD_H  0x0B
-#define TMR0_PRELOAD_L  0xDC
+    // Pin del led de operación
+    TRISA1=0; // Pin A1 es configurado como salida digital
+    LATA1=0; // La salida del Pin A1 es 0
 
-// ===== Estado / Teclado =====
-volatile uint8_t started = 0;
-volatile uint8_t finished = 0;
-volatile uint8_t emg_latched = 0;     // STOP latcheado hasta MCLR
-volatile uint8_t Tecla = 0;           // 0=sin tecla, 1..16 = tecla detectada
+    TRISA2=0; // Pin A2 es configurado como salida digital para el led de operacion
+    LATA2=0; // La salida del Pin A2 es 0
 
-// ===== Variables de UI/contador =====
-static uint8_t target = 0;        // 1..59
-static uint8_t count  = 0;        // 0..target
-static uint8_t input_digits = 0;  // 0,1,2
-static uint8_t input_val    = 0;  // 0..99
+    // Pines para el uso de la lcd
+    TRISA3=0; //RS
+    LATA3=0;
+    TRISA4=0; //E
 
-// ===== Prototipos =====
-void clock_init_8mhz(void);
-void tmr0_start(void);
-void beep_ms(uint16_t ms);
+    //Pin del pulsador de conteo
+    TRISC1=1; //Pin C1 es configurado como entrada digital
 
-// LCD
-void lcd_init(void);
-void lcd_clear(void);
-void lcd_gotoxy(uint8_t col, uint8_t row);
-void lcd_putc(char c);
-void lcd_print(const char *s);
-static void lcd_print2d(uint8_t v);
+    // Pin prender apagar backlight LCD
+    TRISA5=0; // Pin A1 es configurado como salida digital
+    LATA5=1; // La salida del Pin A5 es 0 (backlight prendido)
 
-// Teclado
-char keypad_map_to_char(uint8_t k);
+    // CONFIGURACIÓN DE LAS INTERRUPCIONES //
 
-// UI
-void ui_show_welcome(void);
-void ui_show_input(void);
-void ui_show_input_value(uint8_t val, uint8_t digits);
-void ui_show_counting(void);
-void ui_show_finished(void);
-void ui_show_emergency(void);
+    // Configuración de la interrupción del TIMER0
+    T0CON=0b00000001; //Configuración del timer0 modo 16 bits - prescale 4
+    TMR0=3036; // Valor de precarga
+    TMR0IF=0; // Bandera inicializada en 0
+    TMR0IE=1; // Habilitación local de la interrupción 
+    TMR0ON=1; // Encender el Timer0
 
-// Lógica
-bool validate_target(uint8_t v);
-void reset_counter_only(void);
-void reset_all_to_input(void);
+    // Configuración de la interrupción del TIMER1  
+    T1CON = 0b10110001;               // RD16, 1:8, interno, ON [web:16]
+    TMR1=34286;
+    TMR1IF=0; // Limpiar bandera de Timer1?
+    TMR1IE=1; // Habilitacion local de la interrupcion de Timer1?
+    TMR1ON = 1;
 
-// Indicadores (Lab3)
-void sevenseg_bcd(uint8_t d);      // RD0..RD3
-void rgb_set(uint8_t r, uint8_t g, uint8_t b);
-void set_rgb_by_decena(uint8_t d);
-static inline void indicators_from_count(uint8_t c);
+    //Configuración iterrupción teclado (pueto B)
+    TRISB=0b11110000; // Configura de RB0 a RB3 como salidas y de RB4 a RB7 como entradas
+    LATB=0b00000000;// Salidas del puerto B = 0
+    RBPU=0; //Activa resistencias de pull-up para el puerto B
+    __delay_ms(100); //Delay mientras se polarizan las entradas
+    RBIF=0; // Bandera a cero
+    RBIE=1; // Activación de la interrupción de teclado
 
-// ==================== ISR (baja prioridad) ====================
-void __interrupt(low_priority) low_isr(void){
-    // --- PORTB change: teclado ---
-    if (INTCONbits.RBIF){
-        Tecla = 0;
+    PEIE=1; // Habilitar interrupciones de perifericos
+    GIE=1;  //Habilitación global de las interrupciones
 
-        // Barrido por filas (modificando SOLO nibble bajo)
-        KB_ROWS_LAT = (KB_ROWS_LAT & 0xF0) | 0b00001110; // F1
-        if(RB4==0) Tecla=1;
-        else if(RB5==0) Tecla=2;
-        else if(RB6==0) Tecla=3;
-        else if(RB7==0) Tecla=4;
-        else{
-            KB_ROWS_LAT = (KB_ROWS_LAT & 0xF0) | 0b00001101; // F2
-            if(RB4==0) Tecla=5;
-            else if(RB5==0) Tecla=6;
-            else if(RB6==0) Tecla=7;
-            else if(RB7==0) Tecla=8;
-            else{
-                KB_ROWS_LAT = (KB_ROWS_LAT & 0xF0) | 0b00001011; // F3
-                if(RB4==0) Tecla=9;
-                else if(RB5==0) Tecla=10;
-                else if(RB6==0) Tecla=11;
-                else if(RB7==0) Tecla=12;
-                else{
-                    KB_ROWS_LAT = (KB_ROWS_LAT & 0xF0) | 0b00000111; // F4
-                    if(RB4==0) Tecla=13;
-                    else if(RB5==0) Tecla=14;
-                    else if(RB6==0) Tecla=15;
-                    else if(RB7==0) Tecla=16;
-                }
-            }
-        }
+    //////////////////////////////////////////////////////////////////////////
 
-        // Reposo: filas en 0 (para que próxima pulsación baje columna)
-        KB_ROWS_LAT = (KB_ROWS_LAT & 0xF0) | 0x00;
-
-        __delay_ms(12);     // antirrebote simple
-        (void)PORTB;        // limpia mismatch
-        INTCONbits.RBIF = 0;
-    }
-
-    // --- TMR0: blink 1 Hz ---
-    if (INTCONbits.TMR0IF){
-        INTCONbits.TMR0IF = 0;
-        TMR0H = TMR0_PRELOAD_H;
-        TMR0L = TMR0_PRELOAD_L;
-        CLK_LAT ^= 1;
-    }
-}
-
-// ==================== MAIN ====================
-void main(void){
-    // Todo digital (deshabilita entradas analógicas)
-    ADCON1 = 0x0F;
-
-    // Oscilador interno a 8 MHz
-    clock_init_8mhz();
-
-    // RA: LED, buzzer, LCD RS/EN
-    TRISA &= ~((1<<1)|(1<<2)|(1<<4)|(1<<5)); // RA1,RA2,RA4,RA5 salidas
-    LATA  &= ~((1<<1)|(1<<2)|(1<<4)|(1<<5));
-
-    // RC1 sensor
-    COUNTER_TRIS = 1;
-
-    // PORTD: RD4..RD7 (LCD) y RD0..RD3 (7seg) salidas
-    TRISD = 0x00;
-    sevenseg_bcd(0);        // 7-seg en 0
-
-    // PORTB: columnas in (RB4..RB7), filas out (RB0..RB3)
-    TRISB = 0b11110000;
-    KB_ROWS_LAT = (KB_ROWS_LAT & 0xF0) | 0x00; // filas en 0 (reposo)
-    INTCON2bits.RBPU = 0;   // pull-ups internos activos (columnas)
-
-    // RGB RE0..RE2 salidas, apagado
-    TRISE = 0b1000;         // RE3=MCLR, RE2..RE0 salidas
-    LATE  &= 0b1000;
-    rgb_set(OFF,OFF,OFF);
-
-    // Prioridades e interrupciones
-    RCONbits.IPEN   = 1;    // prioridades
-    INTCONbits.GIEH = 1;    // global high
-    INTCONbits.GIEL = 1;    // global low
-
-    // RBIF como baja prioridad
-    INTCON2bits.RBIP = 0;
-    (void)PORTB;            // lectura inicial
-    INTCONbits.RBIF = 0;
-    INTCONbits.RBIE = 1;
-
-    // TMR0
-    tmr0_start();
-
-    // LCD
-    lcd_init();
-
-    // Estado inicial
-    started = 0; finished = 0; emg_latched = 0;
-    target = 0; count = 0; input_digits = 0; input_val = 0;
-
-    ui_show_welcome();
-    __delay_ms(2000);
-
-    reset_all_to_input();   // 00 en 7-seg, RGB negro, LCD pidiendo objetivo
-    ui_show_input();
-
-    uint8_t last_rc1 = 1;
+    Bienvenida(); //Mensaje de Bienvenida en el LCD
 
     while(1){
-        // EMERGENCIA: solo sale con MCLR (reinicio de hardware)
-        if (emg_latched){
-            ui_show_emergency();
-            rgb_set(ON,OFF,OFF);     // rojo fijo
-            __delay_ms(40);
-            continue;
-        }
+        PreguntaAlUsuario();
+        OcultarCursor();
+        //Mensaje en pantalla
+        MensajeLCD_Var("Faltantes: ");
+        EscribeLCD_n8(Objetivo-Supercontador,2);
+        DireccionaLCD(0xC0);    
+        MensajeLCD_Var("Objetivo: ");
+        EscribeLCD_n8(Objetivo,2);
+        salir=1;
+        //
+        while (salir==1){
+            if(Supercontador==Objetivo){ //Verifica si se llega al objetivo
+                
+                
+                LATA2=1;
+                __delay_ms(1000);
+                LATA2=0;
 
-        // Tecla detectada por ISR
-        if (Tecla){
-            char kc = keypad_map_to_char(Tecla);
-            Tecla = 0;
+                // Mensaje en pantalla
+                BorraLCD();
+                MensajeLCD_Var("Cuenta Cumplida");
+                DireccionaLCD(0xC4);
+                MensajeLCD_Var("Presione OK");
+                //
+                salir = 0; //Se hace la salida 0 para que se salga del ciclo de conteo
+                Tecla='\0'; //valor vacio
+                while(Tecla!= '*'){} // Espera de pulso ok
+                ConfigVariables(); // Configuracion a valores iniciales
 
-            // STOP (B) = EMG latcheada (solo MCLR limpia)
-            if (kc == 'B'){ emg_latched = 1; continue; }
+            }
+            if(RC1==0&&Supercontador!=Objetivo){                                // Verifica si el interruptor está pulsado
+                Inactividad=0;                                                  // Si esta contnado no quiero que entre en sleep
+                Pulsado=0;  
+            }
 
-            if (!started && !finished){
-                if (kc >= '0' && kc <= '9'){
-                    if (input_digits < 2){
-                        input_val = (uint8_t)(input_val*10 + (kc - '0'));
-                        input_digits++;
-                        ui_show_input_value(input_val, input_digits);
-                    } else { beep_ms(70); }
-                } else if (kc == 'C'){ // SUPR
-                    if (input_digits){
-                        input_digits--; input_val /= 10;
-                        ui_show_input_value(input_val, input_digits);
-                    } else { beep_ms(70); }
-                } else if (kc == 'A'){ // OK -> validar y comenzar
-                    if (validate_target(input_val)){
-                        target = input_val; count = 0;
-                        started = 1; finished = 0;
-                        indicators_from_count(0);
-                        set_rgb_by_decena(0);
-                        ui_show_counting();
-                    } else {
-                        lcd_clear(); lcd_print("Objetivo inval.");
-                        lcd_gotoxy(0,1); lcd_print("Rango 1..59");
-                        beep_ms(200); __delay_ms(600);
-                        ui_show_input();
-                        input_digits = 0; input_val = 0;
+            if(Pulsado==0){
+                
+                if(RC1==1){
+                    Pulsado=1;
+                    contador++; // Aumenta contador
+                    Supercontador++; // Aumenta Supercontador
+                    if (contador==10){ // Unidades
+
+                        LATA2=1;
+                        __delay_ms(300);
+                        LATA2=0;
+
+                        contador=0;
+                        contadorRGB++; // Aumento de decenas 
+                        if (contadorRGB==6){ // Decenas 
+                            contadorRGB=0;
+                        }
+                    }                
+                    //RGB (decenas)
+                    if(contadorRGB==0){
+                        LATE=0b00000010; //Magenta
+                    }else if(contadorRGB==1){
+                        LATE=0b00000011; // Azul
+                    }else if(contadorRGB==2){
+                        LATE=0b00000001; // Cyan
+                    }else if(contadorRGB==3){
+                        LATE=0b00000101; // Verde
+                    }else if(contadorRGB==4){
+                        LATE=0b00000100; // Amarillo
+                    }else if(contadorRGB==5){
+                        LATE=0b00000000; //Blanco
                     }
-                } else if (kc == '*'){ // RST en input = limpiar entrada
-                    input_digits = 0; input_val = 0; ui_show_input();
+                    //Mensaje en pantalla
+                    DireccionaLCD(0x8B);
+                    EscribeLCD_n8(Objetivo-Supercontador,2);
+                    //
+                    LATD=contador; // Salida del siete segmentos 
+                    __delay_ms(500);  // delay pa' el pulsador   
                 }
-            }
-            else if (started && !finished){
-                if (kc == '*'){       // RST: reiniciar conteo a 0
-                    reset_counter_only();
-                    indicators_from_count(0);
-                    set_rgb_by_decena(0);
-                    ui_show_counting();
-                } else if (kc == '#'){ // END: abortar y volver a pedir objetivo
-                    reset_all_to_input();
-                    ui_show_input();
-                }
-            }
-            else if (finished){
-                // Al terminar SOLO OK(A) o RST(*) reinician (END ya NO)
-                if (kc == 'A' || kc == '*'){
-                    reset_all_to_input();
-                    ui_show_input();
-                }
-            }
+            }   
         }
 
-        // Sensor conteo RC1 (flanco 1->0)
-        uint8_t rc1 = BTN_RC1_PORT;
-        if (started && !finished && (last_rc1==1 && rc1==0)){
-            if (count < target){
-                count++;
+        LATE=0b00000010; // Rgb (Magenta) 
+        LATD=contador; // Salida siete segmentos
+    }
+}
 
-                // Indicadores Lab3
-                indicators_from_count(count);
+void __interrupt()ISR(void){
+    if(TMR0IF==1){ // Led de operación  
+        TMR0=3036; //Valor de precarga
+        TMR0IF=0; //Bandera en 0
+        LATA1=LATA1^1; // Prende o apaga el led 
+    }
 
-                // beep corto en múltiplos de 10 (10,20,...)
-                if ((count % 10u) == 0u) beep_ms(BEEP_SHORT_MS);
+    if (TMR1IF){
+        TMR1 = 34286;    // Recargar
+        TMR1IF = 0;
 
-                ui_show_counting();
+        Inactividad++;   // Contar segundos
 
-                if (count >= target){
-                    finished = 1; started = 0;
-                    ui_show_finished();    // beep largo aquí
+        // Apagar backlight a los 10 s
+        if(Inactividad == 10){
+            //Backlight = 0;
+            LATA3 = 0;
+        }
+
+        // Entrar en suspensión a los 20 s
+        if(Inactividad >= 20){
+            Sleep();    // suspender PIC
+
+            // ---- DESPERTÓ AQUI ----
+            Inactividad = 0;             // reiniciar inactividad
+            RBIF = 0;                    // limpiar interrupción por teclado
+            TMR1ON = 1;                  // volver a encender Timer1
+        }
+    }
+
+    if(RBIF==1){
+        if(PORTB!=0b11110000){   
+            Inactividad = 0;                                                    // Hubo actividad
+            LATB=0b11111110;
+            if(RB4==0){                                                         //1
+                Tecla=1; 
+                ConfigPregunta();
+            }            
+            else if(RB5==0) {                                                   //2
+                Tecla=2; 
+                ConfigPregunta();
+
+            }
+            else if(RB6==0){                                                    //3
+                Tecla=3; 
+                ConfigPregunta();
+
+            }
+            else if(RB7==0){                                                    //OK
+                Tecla='*'; 
+            }
+
+
+
+
+            else{
+                LATB=0b11111101;
+                if(RB4==0){                                                     //4
+                Tecla=4;
+                ConfigPregunta();
+                }
+                else if(RB5==0) {                                               //5
+                    Tecla=5; 
+                    ConfigPregunta();
+                }
+                else if(RB6==0) {                                               //6
+                    Tecla=6; 
+                    ConfigPregunta();
+                }
+                else if(RB7==0) {                                               //PARADA EMERGENCIA
+                    LATE=0b00000110; //Led en rojo
+                    //Mensaje en pantalla
+                    BorraLCD(); 
+                    OcultarCursor();
+                    MensajeLCD_Var("    PARADA DE");
+                    DireccionaLCD(0xC2);
+                    MensajeLCD_Var("EMERGENCIA");
+                    //
+                    while(1){} // Bucle
+                }   
+
+
+            else{
+                LATB=0b11111011;
+                if(RB4==0) {                                                    //1
+                    Tecla=7; 
+                    ConfigPregunta();
+                }
+                else if(RB5==0) {                                               //2
+                    Tecla=8; 
+                    ConfigPregunta();
+                }
+                else if(RB6==0) {                                               //3
+                    Tecla=9; 
+                    ConfigPregunta();
+                } 
+                else if(RB7==0) {                                               //SUPR
+                    Borrar();
+                }
+
+
+
+            else{
+                LATB=0b11110111;                                                //REINICIO
+                if(RB4==0){ 
+                    contador=0;
+                    Supercontador = 0;
+                    contadorRGB = 0;
+                    LATE=0b00000010; // Rgb (Magenta) 
+                    if(salir==1){
+                        DireccionaLCD(0x8B);
+                        EscribeLCD_n8(Objetivo-Supercontador,2); //Mensaje pantalla
+                        LATD=contador; //Salida del siete segmentos
+                    }
+                }
+                else if(RB5==0) {                                               //0
+                    Tecla=0; 
+                    ConfigPregunta();
+                }
+                else if(RB6==0) {                                               //FIN
+                    Borrar();
+                    Supercontador=Objetivo;
+                    contadorRGB = Objetivo/10;
+                    contador = Objetivo-contadorRGB*10;
+                    if(contadorRGB==0){
+                        LATE=0b00000010; //Magenta
+                    }else if(contadorRGB==1){
+                        LATE=0b00000011; // Azul
+                    }else if(contadorRGB==2){
+                        LATE=0b00000001; // Cyan
+                    }else if(contadorRGB==3){
+                        LATE=0b00000101; // Verde
+                    }else if(contadorRGB==4){
+                        LATE=0b00000100; // Amarillo
+                    }else if(contadorRGB==5){
+                        LATE=0b00000000; //Blanco
+                    }
+                    LATD=contador; // Salida del siete segmentos
+                }
+                else if(RB7==0) {      //LUZ
+                    LATA3=LATA3^1;
+                    TMR1ON=1; // Encender Timer1
                 }
             }
-            __delay_ms(30); // antirrebote
+            }
+            }
+            LATB=0b11110000; // configuración default
         }
-        last_rc1 = rc1;
-
-        __delay_ms(6);
+        __delay_ms(300); // delay pa' el pulsador 
+        RBIF=0; // Bandera en 0
     }
 }
-
-// ==================== Reloj interno ====================
-void clock_init_8mhz(void){
-    // IRCF=111 -> 8 MHz; SCS=10 -> usar oscilador interno
-    OSCCONbits.IRCF = 0b111;
-    OSCCONbits.SCS  = 0b10;
+void ConfigVariables(void){ //Valores iniciales de la variables
+    Pulsado=1;
+    contador=0; 
+    salir=0;
+    Supercontador=0;
+    contadorRGB=0;
+    posicion=0;
+    Objetivo=0;
+    Tecla='\0'; 
 }
+void Bienvenida(void){
+    // CONFIGURACIÓN DEL LCD
+    ConfiguraLCD(4); //Modo de bits  
+    InicializaLCD(); //Inicialización de la pantalla
+    OcultarCursor();
 
-// ==================== TMR0 ====================
-void tmr0_start(void){
-    // 16 bits, clk interno, prescaler 1:16
-    T0CON = 0b00000011;
-    TMR0H = TMR0_PRELOAD_H;
-    TMR0L = TMR0_PRELOAD_L;
-    INTCON2bits.TMR0IP = 0; // baja prioridad
-    INTCONbits.TMR0IF = 0;
-    INTCONbits.TMR0IE = 1;
-    T0CONbits.TMR0ON = 1;
+    //CREACIÓN DE CARACTERES PROPIOS
+    CrearCaracter(Corazon, 0);
+
+    //Mensaje en pantalla
+    EscribeLCD_c(0);
+    EscribeLCD_c(0);
+    MensajeLCD_Var(" Bienvenido ");
+    DireccionaLCD(0xC0);
+    EscribeLCD_c(0);
+    EscribeLCD_c(0);
+    MensajeLCD_Var("  Usuario ");
+    __delay_ms(3200);
+
+    // ? Mover a la derecha (aprox 2 s)
+    for(int i = 0; i < 18; i++){
+        DesplazaPantallaD();  // Shift right
+        __delay_ms(100);
+    }
+
+    // Mensaje total < 5 segundos
 }
-
-// ==================== Utils ====================
-void beep_ms(uint16_t ms){
-    uint32_t n = ((uint32_t)ms*1000u)/(2u*BEEP_PERIOD_US);
-    while(n--){
-        BUZZ_LAT=1; __delay_us(BEEP_PERIOD_US);
-        BUZZ_LAT=0; __delay_us(BEEP_PERIOD_US);
+void PreguntaAlUsuario(void){ //encargada del setup de la pregunta de elementos a contar
+    while(1){
+        CrearCaracter(RayaAlPiso, 1);
+        posicion=0; //posicion del cursor en unidades
+        //Mensaje en pantalla
+        BorraLCD();
+        MensajeLCD_Var("Piezas a contar:");
+        DireccionaLCD(0xC7);
+        EscribeLCD_c(1);
+        EscribeLCD_c(1);
+        DireccionaLCD(0xC7);
+        MostrarCursor();
+        //
+        editor=1; // El usuario puede escribir en el lcd 
+        while(Tecla!= '*'){ // no hacer nada mientras no se de al ok  
+        // el ingreso del valor a contar se hace por medio de interrupciones
+        }
+        if((Objetivo>59)||(Objetivo==0)){
+            editor=0; // El usuario no puede escribir en el lcd
+            Tecla='\0';
+            Objetivo=0;
+            //Mensaje en pantalla
+            BorraLCD();
+            OcultarCursor();
+            MensajeLCD_Var("     !Error!");
+            __delay_ms(1000);
+            BorraLCD();
+            MensajeLCD_Var("Valor max: 59");
+            DireccionaLCD(0xC0);
+            MensajeLCD_Var("Valor min: 01");     
+            __delay_ms(2000);
+            BorraLCD();
+            //
+        }else{
+        editor=0; // El usuario no puede escribir en el lcd
+        posicion='0';
+        BorraLCD();
+        break;
+            }
     }
 }
-
-// ==================== LCD (4 bits) ====================
-static void lcd_pulse(void){ LCD_EN_LAT=1; __delay_us(2); LCD_EN_LAT=0; __delay_us(50); }
-static void lcd_write4(uint8_t nib){ uint8_t out=(nib&0x0F)<<4; LCD_D_LAT=(LCD_D_LAT&0x0F)|out; lcd_pulse(); }
-static void lcd_write(uint8_t b, uint8_t rs){ LCD_RS_LAT=rs?1:0; lcd_write4(b>>4); lcd_write4(b&0x0F); }
-static void lcd_cmd(uint8_t c){ lcd_write(c,0); if(c==0x01||c==0x02) __delay_ms(2); else __delay_us(50); }
-
-void lcd_init(void){
-    __delay_ms(20);
-    LCD_RS_LAT=0; LCD_EN_LAT=0;
-    // 4-bit init
-    lcd_write4(0x03); __delay_ms(5);
-    lcd_write4(0x03); __delay_us(150);
-    lcd_write4(0x03); __delay_us(150);
-    lcd_write4(0x02); __delay_us(150);
-    lcd_cmd(0x28); // 4-bit, 2 líneas, 5x8
-    lcd_cmd(0x08); // display off
-    lcd_cmd(0x01); // clear
-    lcd_cmd(0x06); // entry inc
-    lcd_cmd(0x0C); // display on, cursor off
-}
-void lcd_clear(void){ lcd_cmd(0x01); }
-void lcd_gotoxy(uint8_t col, uint8_t row){ lcd_cmd(0x80 | ((row?0x40:0x00)+col)); }
-void lcd_putc(char c){ lcd_write((uint8_t)c,1); }
-void lcd_print(const char *s){ while(*s) lcd_putc(*s++); }
-static void lcd_print2d(uint8_t v){ lcd_putc('0'+(v/10)); lcd_putc('0'+(v%10)); }
-
-// ==================== Teclado ====================
-char keypad_map_to_char(uint8_t k){
-    // Layout: A=OK, B=STOP, C=SUPR, D=SCRN; *=RST, #=END
-    static const char map[16] = {
-        '7','8','9','A',
-        '4','5','6','B',
-        '1','2','3','C',
-        '*','0','#','D'
-    };
-    if (k>=1 && k<=16) return map[k-1];
-    return 0;
-}
-
-// ==================== UI ====================
-void ui_show_welcome(void){
-    lcd_clear();
-    lcd_print("Bienvenido!");
-    lcd_gotoxy(0,1); lcd_print("Sistema conteo");
-}
-void ui_show_input(void){
-    lcd_clear();
-    lcd_print("Count:");
-    lcd_gotoxy(0,1); lcd_print("Rango 1..59");
-}
-void ui_show_input_value(uint8_t val, uint8_t digits){
-    lcd_clear();
-    lcd_print("Count: ");
-    if (digits==0){ lcd_putc('-'); lcd_putc('-'); }
-    else if (digits==1){ lcd_putc('0'+(val%10)); }
-    else { lcd_print2d(val); }
-    lcd_gotoxy(0,1); lcd_print("OK=Start  SUPR=Delete");
-}
-void ui_show_counting(void){
-    lcd_clear();
-    uint8_t r=(target>count)?(target-count):0;
-    lcd_print("Remaining: "); lcd_print2d(r);
-    lcd_gotoxy(0,1); lcd_print("Goal:");  lcd_print2d(target);
-}
-void ui_show_finished(void){
-    lcd_clear();
-    lcd_print(">> Objetivo OK <<");
-    lcd_gotoxy(0,1); lcd_print("OK/RST= New count");
-    beep_ms(BEEP_LONG_MS);  // zumbido largo SOLO al terminar
-}
-void ui_show_emergency(void){
-    lcd_clear();
-    lcd_print("!! EMERGENCIA !!");
-    lcd_gotoxy(0,1); lcd_print("Reinicie con MCLR");
-}
-
-// ==================== Lógica ====================
-bool validate_target(uint8_t v){ return (v>=1 && v<=59); }
-void reset_counter_only(void){ count=0; finished=0; }
-void reset_all_to_input(void){
-    started=0; finished=0; // emg_latched NO se limpia aquí
-    target=0; count=0;
-    indicators_from_count(0);  // 00 y RGB negro
-    rgb_set(OFF,OFF,OFF);
-}
-
-// ===== Indicadores estilo Lab3 =====
-void sevenseg_bcd(uint8_t d){
-    uint8_t v = (d & 0x0F);               // 0..9
-    LCD_D_LAT = (LCD_D_LAT & 0xF0) | v;   // RD0..RD3 = BCD
-}
-void rgb_set(uint8_t r, uint8_t g, uint8_t b){
-    RGB_R_LAT = r ? 1 : 0;
-    RGB_G_LAT = g ? 1 : 0;
-    RGB_B_LAT = b ? 1 : 0;
-}
-void set_rgb_by_decena(uint8_t d){
-    switch (d % 6u){
-        case 0: rgb_set(ON,OFF,ON); break;   // magenta (R+B)
-        case 1: rgb_set(OFF,OFF,ON); break;  // azul (B)
-        case 2: rgb_set(OFF,ON,ON); break;   // cian (G+B)
-        case 3: rgb_set(OFF,ON,OFF); break;  // verde (G)
-        case 4: rgb_set(ON,ON,OFF); break;   // amarillo (R+G)
-        default: rgb_set(ON,ON,ON); break;   // blanco (R+G+B)
+void ConfigPregunta(){ //Funcion para el ingreso del valor a contar
+    if(posicion==0 && editor==1){
+        EscribeLCD_n8(Tecla,1); //Mensaje en pantalla
+        Objetivo=Tecla;
+    }else if(posicion==1 && editor==1){
+        EscribeLCD_n8(Tecla,1); //Mensaje en pantalla
+        Objetivo=Objetivo*10+Tecla;
+        OcultarCursor();
     }
+    posicion++; 
 }
-static inline void indicators_from_count(uint8_t c){
-    uint8_t u = c % 10u;
-    uint8_t d = c / 10u;      // 0..5
-    sevenseg_bcd(u);
-    if (started || c>0) set_rgb_by_decena(d);
-    else                rgb_set(OFF,OFF,OFF);
+void Borrar(){ //Borrar el valor escrito por el usuario 
+    if(editor==1){
+        MostrarCursor();
+        Objetivo=0;
+        posicion=0;
+        DireccionaLCD(0xC7);
+        EscribeLCD_c(1);
+        EscribeLCD_c(1);
+        DireccionaLCD(0xC7);
+    }
 }

@@ -1,7 +1,7 @@
 ### HEXMate logfile and output summary ###
 
 ### Command-line arguments ###
- C:\Users\sergi\AppData\Local\Temp\xcAskfk.\driver_tmp_3.obj
+ C:\Users\sergi\AppData\Local\Temp\xcAs1qg.\driver_tmp_3.obj
  -Odist/default/production\Lab4.X.production.hex
  -logfile=dist/default/production\Lab4.X.production.hxl
  -addressing=1
@@ -9,12 +9,12 @@
 
 ### Memory Usage ###
  Input file ranges:
-  0h - 3h		(C:\Users\sergi\AppData\Local\Temp\xcAskfk.\driver_tmp_3.obj)
-  18h - 107h		(C:\Users\sergi\AppData\Local\Temp\xcAskfk.\driver_tmp_3.obj)
-  800h - 8C6h		(C:\Users\sergi\AppData\Local\Temp\xcAskfk.\driver_tmp_3.obj)
-  8C8h - 118Bh		(C:\Users\sergi\AppData\Local\Temp\xcAskfk.\driver_tmp_3.obj)
-  200000h - 200007h		(C:\Users\sergi\AppData\Local\Temp\xcAskfk.\driver_tmp_3.obj)
-  300000h - 30000Dh		(C:\Users\sergi\AppData\Local\Temp\xcAskfk.\driver_tmp_3.obj)
+  0h - 3h		(C:\Users\sergi\AppData\Local\Temp\xcAs1qg.\driver_tmp_3.obj)
+  18h - 107h		(C:\Users\sergi\AppData\Local\Temp\xcAs1qg.\driver_tmp_3.obj)
+  800h - 8C6h		(C:\Users\sergi\AppData\Local\Temp\xcAs1qg.\driver_tmp_3.obj)
+  8C8h - 118Bh		(C:\Users\sergi\AppData\Local\Temp\xcAs1qg.\driver_tmp_3.obj)
+  200000h - 200007h		(C:\Users\sergi\AppData\Local\Temp\xcAs1qg.\driver_tmp_3.obj)
+  300000h - 30000Dh		(C:\Users\sergi\AppData\Local\Temp\xcAs1qg.\driver_tmp_3.obj)
  Unused ranges:
   4h - 17h
   108h - 7FFh
@@ -25,7 +25,7 @@
 ### Hex Memory Map ###
  Legend:
   -- = Unused memory
-  H1 = Input file             (C:\Users\sergi\AppData\Local\Temp\xcAskfk.\driver_tmp_3.obj)
+  H1 = Input file             (C:\Users\sergi\AppData\Local\Temp\xcAs1qg.\driver_tmp_3.obj)
 ----------------------------------------------------------
          | 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F
 ----------------------------------------------------------

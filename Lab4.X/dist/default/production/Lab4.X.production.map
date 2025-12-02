@@ -6,9 +6,9 @@ Linker command line:
   --edf=C:\Program Files\Microchip\xc8\v2.50\pic\dat\20240725155939_en.msgs \
   -cn -h+dist/default/production\Lab4.X.production.sym \
   --cmf=dist/default/production\Lab4.X.production.cmf -z -Q18F4550 \
-  -oC:\Users\sergi\AppData\Local\Temp\xcAskfk.\driver_tmp_3.obj \
+  -oC:\Users\sergi\AppData\Local\Temp\xcAs1qg.\driver_tmp_3.obj \
   -Mdist/default/production/Lab4.X.production.map \
-  --md=C:\Users\sergi\AppData\Local\Temp\xcAskfk.\driver_tmp_0.dat -E1 \
+  --md=C:\Users\sergi\AppData\Local\Temp\xcAs1qg.\driver_tmp_0.dat -E1 \
   -ver=XC8 Compiler -ACODE=00h-07FFFh -ACONST=00h-07FFFh \
   -ASMALLCONST=0800h-08FFhx120 -AMEDIUMCONST=0800h-07FFFh -ACOMRAM=01h-05Fh \
   -AABS1=00h-07FFh -ABIGRAM=01h-07FFh -ARAM=060h-0FFh,0100h-01FFhx7 \
@@ -24,7 +24,7 @@ Linker command line:
   -pfarbss=FARRAM,fardata=FARRAM,nvFARRAM=FARRAM \
   -pintsave_regs=BIGRAM,bigbss=BIGRAM,bigdata=BIGRAM -pbss=RAM \
   -pidata=CODE,irdata=CODE,ibigdata=CODE,ifardata=CODE -prparam=COMRAM \
-  C:\Users\sergi\AppData\Local\Temp\xcAskfk.\driver_tmp_9.obj \
+  C:\Users\sergi\AppData\Local\Temp\xcAs1qg.\driver_tmp_9.obj \
   dist/default/production\Lab4.X.production.obj 
 
 Object code version is 3.11
@@ -34,7 +34,7 @@ Machine type is 18F4550
 
 
                 Name                               Link     Load   Length Selector   Space Scale
-C:\Users\sergi\AppData\Local\Temp\xcAskfk.\driver_tmp_9.obj
+C:\Users\sergi\AppData\Local\Temp\xcAs1qg.\driver_tmp_9.obj
                 idloc                            200000   200000        8        0       5
                 config                           300000   300000        E        0       4
                 init                                104      104        4        C       0
