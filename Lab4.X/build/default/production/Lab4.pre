@@ -5667,405 +5667,844 @@ __attribute__((__unsupported__("The " "Write_b_eep" " routine is no longer suppo
 unsigned char __t1rd16on(void);
 unsigned char __t3rd16on(void);
 
-# 15 "C:\Program Files\Microchip\xc8\v2.50\pic\include\c90\stdbool.h"
-typedef unsigned char bool;
+# 33 "LibLCDXC8.h"
+unsigned char interfaz=8;
+
+void ConfiguraLCD(unsigned char);
+void RetardoLCD(unsigned char);
+void EnviaDato(unsigned char);
+void InicializaLCD(void);
+void HabilitaLCD(void);
+void BorraLCD(void);
+void CursorAInicio(void);
+void ComandoLCD(unsigned char);
+void EscribeLCD_c(unsigned char);
+void EscribeLCD_n8(unsigned char, unsigned char);
+void EscribeLCD_n16(unsigned int, unsigned char);
+void EscribeLCD_d(double, unsigned char, unsigned char);
+void MensajeLCD_Var(char *);
+void DireccionaLCD(unsigned char);
+void FijaCursorLCD(unsigned char,unsigned char);
+void DesplazaPantallaD(void);
+void DesplazaPantallaI(void);
+void CrearCaracter(unsigned char *,unsigned char);
+void OcultarCursor(void);
+void MostrarCursor(void);
 
 
-# 8 "Lab4.c"
+void ConfiguraLCD(unsigned char a){
+if(a==4 | a ==8)
+interfaz=a;
+}
+void EnviaDato(unsigned char a){
+if(interfaz==4){
+LATD=(LATD & 0b00001111) | (a & 0b11110000);
+HabilitaLCD();
+RetardoLCD(1);
+LATD=(LATD & 0b00001111) | (a<<4);
+
+
+}else if(interfaz==8){
+LATD=a;
+}
+}
+void InicializaLCD(void){
+
+LATA4=0;
+if(interfaz==4)
+LATD=(LATD & 0b00001111) | 0x30;
+else
+LATD=0x3F;
+HabilitaLCD();
+RetardoLCD(1);
+if(interfaz==4)
+LATD=(LATD & 0b00001111) | 0x30;
+else
+LATD=0x3F;
+HabilitaLCD();
+RetardoLCD(3);
+if(interfaz==4)
+LATD=(LATD & 0b00001111) | 0x30;
+else
+LATD=0x3F;
+HabilitaLCD();
+RetardoLCD(4);
+if(interfaz==4){
+LATD=(LATD & 0b00001111) | 0x20;
+HabilitaLCD();
+RetardoLCD(4);
+EnviaDato(0x2F);
+HabilitaLCD();
+RetardoLCD(4);
+}
+BorraLCD();
+EnviaDato(0xF);
+HabilitaLCD();
+RetardoLCD(4);
+}
+void HabilitaLCD(void){
+
+LATA5=1;
+_delay((unsigned long)((40)*(1000000/4000000.0)));
+
+LATA5=0;
+}
+void BorraLCD(void){
+
+LATA4=0;
+EnviaDato(0x01);
+HabilitaLCD();
+RetardoLCD(2);
+}
+void CursorAInicio(){
+
+
+DireccionaLCD(0x80);
+
+}
+void ComandoLCD(unsigned char a){
+
+LATA4=0;
+if(a==1)
+BorraLCD();
+else if((a&0b11111110)==2)
+CursorAInicio();
+else{
+EnviaDato(a);
+HabilitaLCD();
+RetardoLCD(4);
+}
+}
+void EscribeLCD_c(unsigned char a){
+
+
+
+LATA4=1;
+EnviaDato(a);
+HabilitaLCD();
+RetardoLCD(4);
+}
+void EscribeLCD_n8(unsigned char a,unsigned char b){
+
+
+
+
+unsigned char centena,decena,unidad;
+LATA4=1;
+switch(b){
+case 1: unidad=a%10;
+EnviaDato(unidad+48);
+HabilitaLCD();
+RetardoLCD(4);
+break;
+case 2: decena=(a%100)/10;
+unidad=a%10;
+EnviaDato(decena+48);
+HabilitaLCD();
+RetardoLCD(4);
+EnviaDato(unidad+48);
+HabilitaLCD();
+RetardoLCD(4);
+break;
+case 3: centena=a/100;
+decena=(a%100)/10;
+unidad=a%10;
+EnviaDato(centena+48);
+HabilitaLCD();
+RetardoLCD(4);
+EnviaDato(decena+48);
+HabilitaLCD();
+RetardoLCD(4);
+EnviaDato(unidad+48);
+HabilitaLCD();
+RetardoLCD(4);
+break;
+default: break;
+}
+}
+void EscribeLCD_n16(unsigned int a,unsigned char b){
+
+
+
+
+unsigned char decena,unidad;
+unsigned int centena,millar;
+LATA4=1;
+switch(b){
+case 1: unidad=a%10;
+EscribeLCD_c(unidad+48);
+break;
+case 2: decena=(a%100)/10;
+unidad=a%10;
+EscribeLCD_c(decena+48);
+EscribeLCD_c(unidad+48);
+break;
+case 3: centena=(a%1000)/100;
+decena=(a%100)/10;
+unidad=a%10;
+EscribeLCD_c(centena+48);
+EscribeLCD_c(decena+48);
+EscribeLCD_c(unidad+48);
+break;
+case 4: millar=(a%10000)/1000;
+centena=(a%1000)/100;
+decena=(a%100)/10;
+unidad=a%10;
+EscribeLCD_c(millar+48);
+EscribeLCD_c(centena+48);
+EscribeLCD_c(decena+48);
+EscribeLCD_c(unidad+48);
+break;
+case 5: EscribeLCD_c(a/10000 +48);
+millar=(a%10000)/1000;
+centena=(a%1000)/100;
+decena=(a%100)/10;
+unidad=a%10;
+EscribeLCD_c(millar+48);
+EscribeLCD_c(centena+48);
+EscribeLCD_c(decena+48);
+EscribeLCD_c(unidad+48);
+break;
+default: break;
+}
+}
+void EscribeLCD_d(double num, unsigned char digi, unsigned char digd){
+
+}
+void MensajeLCD_Var(char* a){
+
+
+
+
+for (int i=0;a[i] != '\0';i++){
+EscribeLCD_c(a[i]);
+}
+}
+void DireccionaLCD(unsigned char a){
+
+
+LATA4=0;
+EnviaDato(a);
+HabilitaLCD();
+RetardoLCD(4);
+}
+void FijaCursorLCD(unsigned char fila,unsigned char columna){
+
+# 261
+}
+void DesplazaPantallaD(void){
+
+LATA4=0;
+EnviaDato(28);
+HabilitaLCD();
+RetardoLCD(4);
+}
+void DesplazaPantallaI(void){
+
+LATA4=0;
+EnviaDato(24);
+HabilitaLCD();
+RetardoLCD(4);
+}
+void DesplazaCursorD(void){
+
+LATA4=0;
+EnviaDato(20);
+HabilitaLCD();
+RetardoLCD(4);
+}
+void DesplazaCursorI(void){
+
+LATA4=0;
+EnviaDato(16);
+HabilitaLCD();
+RetardoLCD(4);
+}
+void RetardoLCD(unsigned char a){
+switch(a){
+case 1: _delay((unsigned long)((15)*(1000000/4000.0)));
+
+break;
+case 2: _delay((unsigned long)((1)*(1000000/4000.0)));
+_delay((unsigned long)((640)*(1000000/4000000.0)));
+
+break;
+case 3: _delay((unsigned long)((100)*(1000000/4000000.0)));
+
+break;
+case 4: _delay((unsigned long)((40)*(1000000/4000000.0)));
+
+break;
+default:
+break;
+}
+}
+void CrearCaracter(unsigned char *arreglo,unsigned char posicionCGRAM){
+LATA4=0;
+EnviaDato(0x40|(posicionCGRAM*8));
+HabilitaLCD();
+RetardoLCD(4);
+LATA4=1;
+RetardoLCD(2);
+for (int i=0;i<8;i++){
+EnviaDato(arreglo[i]);
+HabilitaLCD();
+RetardoLCD(4);
+}
+DireccionaLCD(0x80);
+}
+void OcultarCursor(void){
+ComandoLCD(0xC);
+}
+void MostrarCursor(void){
+ComandoLCD(0xF);
+}
+
+
+# 5 "Lab4.c"
+#pragma config FOSC=INTOSC_EC
 #pragma config WDT=OFF
 #pragma config LVP=OFF
-#pragma config PBADEN=OFF
-#pragma config MCLRE=ON
-#pragma config FOSC=INTOSCIO_EC
-
-# 57
-volatile uint8_t started = 0;
-volatile uint8_t finished = 0;
-volatile uint8_t emg_latched = 0;
-volatile uint8_t Tecla = 0;
 
 
-static uint8_t target = 0;
-static uint8_t count = 0;
-static uint8_t input_digits = 0;
-static uint8_t input_val = 0;
 
 
-void clock_init_8mhz(void);
-void tmr0_start(void);
-void beep_ms(uint16_t ms);
+unsigned char Estrella[8] = {
+0b00100,
+0b01110,
+0b11111,
+0b01110,
+0b11111,
+0b01110,
+0b00100,
+0b00000
+};
 
 
-void lcd_init(void);
-void lcd_clear(void);
-void lcd_gotoxy(uint8_t col, uint8_t row);
-void lcd_putc(char c);
-void lcd_print(const char *s);
-static void lcd_print2d(uint8_t v);
+unsigned char Marco[8] = {
+0b11111,
+0b10001,
+0b10001,
+0b10001,
+0b10001,
+0b10001,
+0b10001,
+0b11111
+};
 
 
-char keypad_map_to_char(uint8_t k);
 
 
-void ui_show_welcome(void);
-void ui_show_input(void);
-void ui_show_input_value(uint8_t val, uint8_t digits);
-void ui_show_counting(void);
-void ui_show_finished(void);
-void ui_show_emergency(void);
+unsigned int piezasTotalesContadas;
+unsigned int unidades7Seg;
+unsigned int decenasRGB;
 
 
-bool validate_target(uint8_t v);
-void reset_counter_only(void);
-void reset_all_to_input(void);
+unsigned char indiceDigitoObjetivo;
+unsigned char modoEdicionObjetivo;
+unsigned int piezasObjetivo;
 
 
-void sevenseg_bcd(uint8_t d);
-void rgb_set(uint8_t r, uint8_t g, uint8_t b);
-void set_rgb_by_decena(uint8_t d);
-static inline void indicators_from_count(uint8_t c);
+unsigned char flagConteoActivo;
+unsigned char teclaLeida;
+unsigned char pulsadorListo;
 
 
-void __interrupt(low_priority) low_isr(void){
-
-if (INTCONbits.RBIF){
-Tecla = 0;
+unsigned char segundosSinActividad;
 
 
-LATB = (LATB & 0xF0) | 0b00001110;
-if(RB4==0) Tecla=1;
-else if(RB5==0) Tecla=2;
-else if(RB6==0) Tecla=3;
-else if(RB7==0) Tecla=4;
-else{
-LATB = (LATB & 0xF0) | 0b00001101;
-if(RB4==0) Tecla=5;
-else if(RB5==0) Tecla=6;
-else if(RB6==0) Tecla=7;
-else if(RB7==0) Tecla=8;
-else{
-LATB = (LATB & 0xF0) | 0b00001011;
-if(RB4==0) Tecla=9;
-else if(RB5==0) Tecla=10;
-else if(RB6==0) Tecla=11;
-else if(RB7==0) Tecla=12;
-else{
-LATB = (LATB & 0xF0) | 0b00000111;
-if(RB4==0) Tecla=13;
-else if(RB5==0) Tecla=14;
-else if(RB6==0) Tecla=15;
-else if(RB7==0) Tecla=16;
-}
-}
-}
+
+void __interrupt() ISR(void);
+void ConfigVariables(void);
+void Bienvenida(void);
+void PreguntaAlUsuario(void);
+void ConfigPregunta(void);
+void Borrar(void);
 
 
-LATB = (LATB & 0xF0) | 0x00;
 
-_delay((unsigned long)((12)*(8000000UL/4000.0)));
-(void)PORTB;
-INTCONbits.RBIF = 0;
-}
+void main (void){
 
-
-if (INTCONbits.TMR0IF){
-INTCONbits.TMR0IF = 0;
-TMR0H = 0x0B;
-TMR0L = 0xDC;
-LATA1 ^= 1;
-}
-}
+ConfigVariables();
+modoEdicionObjetivo = 0;
 
 
-void main(void){
-
-ADCON1 = 0x0F;
+ADCON1 = 0b00001111;
 
 
-clock_init_8mhz();
+TRISE = 0;
+LATE = 0b00000111;
 
 
-TRISA &= ~((1<<1)|(1<<2)|(1<<4)|(1<<5));
-LATA &= ~((1<<1)|(1<<2)|(1<<4)|(1<<5));
+TRISD = 0;
+LATD = unidades7Seg;
+
+
+TRISA1 = 0;
+LATA1 = 0;
+
+
+TRISA2 = 0;
+LATA2 = 0;
+
+
+TRISA3 = 0;
+LATA3 = 0;
+TRISA4 = 0;
 
 
 TRISC1 = 1;
 
 
-TRISD = 0x00;
-sevenseg_bcd(0);
+TRISA5 = 0;
+LATA5 = 1;
+
+
+
+
+T0CON = 0b00000001;
+TMR0 = 3036;
+TMR0IF = 0;
+TMR0IE = 1;
+TMR0ON = 1;
+
+
+T1CON = 0b00000000;
+TMR1 = 0;
+TMR1IF = 0;
+TMR1IE = 0;
+TMR1ON = 0;
 
 
 TRISB = 0b11110000;
-LATB = (LATB & 0xF0) | 0x00;
-INTCON2bits.RBPU = 0;
+LATB = 0b00000000;
+RBPU = 0;
+_delay((unsigned long)((100)*(1000000/4000.0)));
+RBIF = 0;
+RBIE = 1;
 
 
-TRISE = 0b1000;
-LATE &= 0b1000;
-rgb_set(0u,0u,0u);
+PEIE = 1;
+GIE = 1;
 
 
-RCONbits.IPEN = 1;
-INTCONbits.GIEH = 1;
-INTCONbits.GIEL = 1;
 
-
-INTCON2bits.RBIP = 0;
-(void)PORTB;
-INTCONbits.RBIF = 0;
-INTCONbits.RBIE = 1;
-
-
-tmr0_start();
-
-
-lcd_init();
-
-
-started = 0; finished = 0; emg_latched = 0;
-target = 0; count = 0; input_digits = 0; input_val = 0;
-
-ui_show_welcome();
-_delay((unsigned long)((2000)*(8000000UL/4000.0)));
-
-reset_all_to_input();
-ui_show_input();
-
-uint8_t last_rc1 = 1;
+Bienvenida();
 
 while(1){
 
-if (emg_latched){
-ui_show_emergency();
-rgb_set(1u,0u,0u);
-_delay((unsigned long)((40)*(8000000UL/4000.0)));
-continue;
+PreguntaAlUsuario();
+OcultarCursor();
+
+
+MensajeLCD_Var("Faltantes: ");
+EscribeLCD_n8(piezasObjetivo - piezasTotalesContadas, 2);
+DireccionaLCD(0xC0);
+MensajeLCD_Var("Objetivo: ");
+EscribeLCD_n8(piezasObjetivo, 2);
+
+flagConteoActivo = 1;
+
+
+while (flagConteoActivo == 1){
+
+
+if(piezasTotalesContadas == piezasObjetivo){
+
+
+LATA2 = 1;
+_delay((unsigned long)((1000)*(1000000/4000.0)));
+LATA2 = 0;
+
+
+BorraLCD();
+MensajeLCD_Var("Cuenta Cumplida");
+DireccionaLCD(0xC4);
+MensajeLCD_Var("Presione OK");
+
+
+flagConteoActivo = 0;
+teclaLeida = '\0';
+
+
+while(teclaLeida != '*'){}
+
+
+ConfigVariables();
 }
 
 
-if (Tecla){
-char kc = keypad_map_to_char(Tecla);
-Tecla = 0;
-
-
-if (kc == 'B'){ emg_latched = 1; continue; }
-
-if (!started && !finished){
-if (kc >= '0' && kc <= '9'){
-if (input_digits < 2){
-input_val = (uint8_t)(input_val*10 + (kc - '0'));
-input_digits++;
-ui_show_input_value(input_val, input_digits);
-} else { beep_ms(70); }
-} else if (kc == 'C'){
-if (input_digits){
-input_digits--; input_val /= 10;
-ui_show_input_value(input_val, input_digits);
-} else { beep_ms(70); }
-} else if (kc == 'A'){
-if (validate_target(input_val)){
-target = input_val; count = 0;
-started = 1; finished = 0;
-indicators_from_count(0);
-set_rgb_by_decena(0);
-ui_show_counting();
-} else {
-lcd_clear(); lcd_print("Objetivo inval.");
-lcd_gotoxy(0,1); lcd_print("Rango 1..59");
-beep_ms(200); _delay((unsigned long)((600)*(8000000UL/4000.0)));
-ui_show_input();
-input_digits = 0; input_val = 0;
-}
-} else if (kc == '*'){
-input_digits = 0; input_val = 0; ui_show_input();
-}
-}
-else if (started && !finished){
-if (kc == '*'){
-reset_counter_only();
-indicators_from_count(0);
-set_rgb_by_decena(0);
-ui_show_counting();
-} else if (kc == '#'){
-reset_all_to_input();
-ui_show_input();
-}
-}
-else if (finished){
-
-if (kc == 'A' || kc == '*'){
-reset_all_to_input();
-ui_show_input();
-}
-}
+if(RC1 == 0 && piezasTotalesContadas != piezasObjetivo){
+segundosSinActividad = 0;
+pulsadorListo = 0;
 }
 
 
-uint8_t rc1 = RC1;
-if (started && !finished && (last_rc1==1 && rc1==0)){
-if (count < target){
-count++;
+if(pulsadorListo == 0){
+if(RC1 == 1){
+pulsadorListo = 1;
 
 
-indicators_from_count(count);
+unidades7Seg++;
+piezasTotalesContadas++;
 
 
-if ((count % 10u) == 0u) beep_ms(80u);
+if (unidades7Seg == 10){
 
-ui_show_counting();
 
-if (count >= target){
-finished = 1; started = 0;
-ui_show_finished();
-}
-}
-_delay((unsigned long)((30)*(8000000UL/4000.0)));
-}
-last_rc1 = rc1;
+LATA2 = 1;
+_delay((unsigned long)((300)*(1000000/4000.0)));
+LATA2 = 0;
 
-_delay((unsigned long)((6)*(8000000UL/4000.0)));
+unidades7Seg = 0;
+decenasRGB++;
+
+if (decenasRGB == 6){
+decenasRGB = 0;
 }
 }
 
 
-void clock_init_8mhz(void){
-
-OSCCONbits.IRCF = 0b111;
-OSCCONbits.SCS = 0b10;
+if(decenasRGB == 0){
+LATE = 0b00000001;
+}else if(decenasRGB == 1){
+LATE = 0b00000101;
+}else if(decenasRGB == 2){
+LATE = 0b00000100;
+}else if(decenasRGB == 3){
+LATE = 0b00000110;
+}else if(decenasRGB == 4){
+LATE = 0b00000010;
+}else if(decenasRGB == 5){
+LATE = 0b00000000;
 }
 
 
-void tmr0_start(void){
+DireccionaLCD(0x8B);
+EscribeLCD_n8(piezasObjetivo - piezasTotalesContadas, 2);
 
-T0CON = 0b00000011;
-TMR0H = 0x0B;
-TMR0L = 0xDC;
-INTCON2bits.TMR0IP = 0;
-INTCONbits.TMR0IF = 0;
-INTCONbits.TMR0IE = 1;
-T0CONbits.TMR0ON = 1;
+
+LATD = unidades7Seg;
+
+_delay((unsigned long)((500)*(1000000/4000.0)));
 }
-
-
-void beep_ms(uint16_t ms){
-uint32_t n = ((uint32_t)ms*1000u)/(2u*250u);
-while(n--){
-LATA2=1; _delay((unsigned long)((250u)*(8000000UL/4000000.0)));
-LATA2=0; _delay((unsigned long)((250u)*(8000000UL/4000000.0)));
 }
 }
 
 
-static void lcd_pulse(void){ LATA5=1; _delay((unsigned long)((2)*(8000000UL/4000000.0))); LATA5=0; _delay((unsigned long)((50)*(8000000UL/4000000.0))); }
-static void lcd_write4(uint8_t nib){ uint8_t out=(nib&0x0F)<<4; LATD=(LATD&0x0F)|out; lcd_pulse(); }
-static void lcd_write(uint8_t b, uint8_t rs){ LATA4=rs?1:0; lcd_write4(b>>4); lcd_write4(b&0x0F); }
-static void lcd_cmd(uint8_t c){ lcd_write(c,0); if(c==0x01||c==0x02) _delay((unsigned long)((2)*(8000000UL/4000.0))); else _delay((unsigned long)((50)*(8000000UL/4000000.0))); }
-
-void lcd_init(void){
-_delay((unsigned long)((20)*(8000000UL/4000.0)));
-LATA4=0; LATA5=0;
-
-lcd_write4(0x03); _delay((unsigned long)((5)*(8000000UL/4000.0)));
-lcd_write4(0x03); _delay((unsigned long)((150)*(8000000UL/4000000.0)));
-lcd_write4(0x03); _delay((unsigned long)((150)*(8000000UL/4000000.0)));
-lcd_write4(0x02); _delay((unsigned long)((150)*(8000000UL/4000000.0)));
-lcd_cmd(0x28);
-lcd_cmd(0x08);
-lcd_cmd(0x01);
-lcd_cmd(0x06);
-lcd_cmd(0x0C);
+LATE = 0b00000001;
+LATD = unidades7Seg;
 }
-void lcd_clear(void){ lcd_cmd(0x01); }
-void lcd_gotoxy(uint8_t col, uint8_t row){ lcd_cmd(0x80 | ((row?0x40:0x00)+col)); }
-void lcd_putc(char c){ lcd_write((uint8_t)c,1); }
-void lcd_print(const char *s){ while(*s) lcd_putc(*s++); }
-static void lcd_print2d(uint8_t v){ lcd_putc('0'+(v/10)); lcd_putc('0'+(v%10)); }
-
-
-char keypad_map_to_char(uint8_t k){
-
-static const char map[16] = {
-'7','8','9','A',
-'4','5','6','B',
-'1','2','3','C',
-'*','0','#','D'
-};
-if (k>=1 && k<=16) return map[k-1];
-return 0;
 }
 
 
-void ui_show_welcome(void){
-lcd_clear();
-lcd_print("Bienvenido!");
-lcd_gotoxy(0,1); lcd_print("Sistema conteo");
-}
-void ui_show_input(void){
-lcd_clear();
-lcd_print("Count:");
-lcd_gotoxy(0,1); lcd_print("Rango 1..59");
-}
-void ui_show_input_value(uint8_t val, uint8_t digits){
-lcd_clear();
-lcd_print("Count: ");
-if (digits==0){ lcd_putc('-'); lcd_putc('-'); }
-else if (digits==1){ lcd_putc('0'+(val%10)); }
-else { lcd_print2d(val); }
-lcd_gotoxy(0,1); lcd_print("OK=Start  SUPR=Delete");
-}
-void ui_show_counting(void){
-lcd_clear();
-uint8_t r=(target>count)?(target-count):0;
-lcd_print("Remaining: "); lcd_print2d(r);
-lcd_gotoxy(0,1); lcd_print("Goal:"); lcd_print2d(target);
-}
-void ui_show_finished(void){
-lcd_clear();
-lcd_print(">> Objetivo OK <<");
-lcd_gotoxy(0,1); lcd_print("OK/RST= New count");
-beep_ms(1000u);
-}
-void ui_show_emergency(void){
-lcd_clear();
-lcd_print("!! EMERGENCIA !!");
-lcd_gotoxy(0,1); lcd_print("Reinicie con MCLR");
+
+void __interrupt() ISR(void){
+
+
+if(TMR0IF == 1){
+TMR0 = 3036;
+TMR0IF = 0;
+LATA1 = LATA1 ^ 1;
+
+segundosSinActividad++;
+
+
+if(segundosSinActividad == 10){
+
+LATA3 = 0;
 }
 
 
-bool validate_target(uint8_t v){ return (v>=1 && v<=59); }
-void reset_counter_only(void){ count=0; finished=0; }
-void reset_all_to_input(void){
-started=0; finished=0;
-target=0; count=0;
-indicators_from_count(0);
-rgb_set(0u,0u,0u);
+if(segundosSinActividad >= 20){
+asm(" sleep");
+
+
+segundosSinActividad = 0;
+RBIF = 0;
+TMR0ON = 1;
+}
 }
 
 
-void sevenseg_bcd(uint8_t d){
-uint8_t v = (d & 0x0F);
-LATD = (LATD & 0xF0) | v;
+if (TMR1IF){
+TMR1 = 34286;
+TMR1IF = 0;
+
+segundosSinActividad++;
+
+
+if(segundosSinActividad == 10){
+
+LATA3 = 0;
 }
-void rgb_set(uint8_t r, uint8_t g, uint8_t b){
-LATE1 = r ? 1 : 0;
-LATE0 = g ? 1 : 0;
-LATE2 = b ? 1 : 0;
-}
-void set_rgb_by_decena(uint8_t d){
-switch (d % 6u){
-case 0: rgb_set(1u,0u,1u); break;
-case 1: rgb_set(0u,0u,1u); break;
-case 2: rgb_set(0u,1u,1u); break;
-case 3: rgb_set(0u,1u,0u); break;
-case 4: rgb_set(1u,1u,0u); break;
-default: rgb_set(1u,1u,1u); break;
+
+
+if(segundosSinActividad >= 20){
+asm(" sleep");
+
+
+segundosSinActividad = 0;
+RBIF = 0;
+TMR1ON = 1;
 }
 }
-static inline void indicators_from_count(uint8_t c){
-uint8_t u = c % 10u;
-uint8_t d = c / 10u;
-sevenseg_bcd(u);
-if (started || c>0) set_rgb_by_decena(d);
-else rgb_set(0u,0u,0u);
+
+
+if(RBIF == 1){
+if(PORTB != 0b11110000){
+
+segundosSinActividad = 0;
+LATB = 0b11111110;
+
+
+if(RB4 == 0){
+teclaLeida = 1;
+ConfigPregunta();
+}
+else if(RB5 == 0){
+teclaLeida = 2;
+ConfigPregunta();
+}
+else if(RB6 == 0){
+teclaLeida = 3;
+ConfigPregunta();
+}
+else if(RB7 == 0){
+teclaLeida = '*';
+}
+
+
+else{
+LATB = 0b11111101;
+
+if(RB4 == 0){
+teclaLeida = 4;
+ConfigPregunta();
+}
+else if(RB5 == 0){
+teclaLeida = 5;
+ConfigPregunta();
+}
+else if(RB6 == 0){
+teclaLeida = 6;
+ConfigPregunta();
+}
+else if(RB7 == 0){
+LATE = 0b00000011;
+BorraLCD();
+OcultarCursor();
+MensajeLCD_Var("    PARADA DE");
+DireccionaLCD(0xC2);
+MensajeLCD_Var("EMERGENCIA");
+
+while(1){}
+}
+
+
+else{
+LATB = 0b11111011;
+
+if(RB4 == 0){
+teclaLeida = 7;
+ConfigPregunta();
+}
+else if(RB5 == 0){
+teclaLeida = 8;
+ConfigPregunta();
+}
+else if(RB6 == 0){
+teclaLeida = 9;
+ConfigPregunta();
+}
+else if(RB7 == 0){
+Borrar();
+}
+
+
+else{
+LATB = 0b11110111;
+
+if(RB4 == 0){
+unidades7Seg = 0;
+piezasTotalesContadas = 0;
+decenasRGB = 0;
+LATE = 0b00000001;
+
+if(flagConteoActivo == 1){
+DireccionaLCD(0x8B);
+EscribeLCD_n8(piezasObjetivo - piezasTotalesContadas, 2);
+LATD = unidades7Seg;
+}
+}
+else if(RB5 == 0){
+teclaLeida = 0;
+ConfigPregunta();
+}
+else if(RB6 == 0){
+Borrar();
+piezasTotalesContadas = piezasObjetivo;
+decenasRGB = piezasObjetivo / 10;
+unidades7Seg = piezasObjetivo - decenasRGB * 10;
+
+
+if(decenasRGB == 0){
+LATE = 0b00000010;
+}else if(decenasRGB == 1){
+LATE = 0b00000011;
+}else if(decenasRGB == 2){
+LATE = 0b00000001;
+}else if(decenasRGB == 3){
+LATE = 0b00000101;
+}else if(decenasRGB == 4){
+LATE = 0b00000100;
+}else if(decenasRGB == 5){
+LATE = 0b00000000;
+}
+
+LATD = unidades7Seg;
+}
+else if(RB7 == 0){
+LATA3 = LATA3 ^ 1;
+TMR0ON = 1;
+}
+}
+}
+}
+
+LATB = 0b11110000;
+}
+
+_delay((unsigned long)((300)*(1000000/4000.0)));
+RBIF = 0;
+}
+}
+
+
+
+void ConfigVariables(void){
+pulsadorListo = 1;
+unidades7Seg = 0;
+flagConteoActivo = 0;
+piezasTotalesContadas = 0;
+decenasRGB = 0;
+indiceDigitoObjetivo = 0;
+piezasObjetivo = 0;
+teclaLeida = '\0';
+segundosSinActividad = 0;
+}
+
+
+
+void Bienvenida(void){
+
+ConfiguraLCD(4);
+InicializaLCD();
+OcultarCursor();
+
+
+CrearCaracter(Estrella, 0);
+
+
+EscribeLCD_c(0);
+EscribeLCD_c(0);
+MensajeLCD_Var(" Bienvenido ");
+EscribeLCD_c(0);
+EscribeLCD_c(0);
+
+DireccionaLCD(0xC0);
+EscribeLCD_c(0);
+EscribeLCD_c(0);
+MensajeLCD_Var("  Operario ");
+EscribeLCD_c(0);
+EscribeLCD_c(0);
+_delay((unsigned long)((3200)*(1000000/4000.0)));
+
+
+for(int i = 0; i < 18; i++){
+DesplazaPantallaD();
+_delay((unsigned long)((100)*(1000000/4000.0)));
+}
+}
+
+
+
+void PreguntaAlUsuario(void){
+while(1){
+CrearCaracter(Marco, 1);
+indiceDigitoObjetivo = 0;
+
+
+BorraLCD();
+MensajeLCD_Var("Piezas a contar:");
+DireccionaLCD(0xC7);
+EscribeLCD_c(1);
+EscribeLCD_c(1);
+DireccionaLCD(0xC7);
+MostrarCursor();
+
+modoEdicionObjetivo = 1;
+teclaLeida = '\0';
+
+
+while(teclaLeida != '*'){
+
+}
+
+
+if((piezasObjetivo > 59) || (piezasObjetivo == 0)){
+modoEdicionObjetivo = 0;
+teclaLeida = '\0';
+piezasObjetivo = 0;
+
+
+BorraLCD();
+OcultarCursor();
+MensajeLCD_Var("     !Error!");
+_delay((unsigned long)((1000)*(1000000/4000.0)));
+BorraLCD();
+MensajeLCD_Var("Valor max: 59");
+DireccionaLCD(0xC0);
+MensajeLCD_Var("Valor min: 01");
+_delay((unsigned long)((2000)*(1000000/4000.0)));
+BorraLCD();
+}else{
+
+modoEdicionObjetivo = 0;
+indiceDigitoObjetivo = 0;
+BorraLCD();
+teclaLeida = '\0';
+break;
+}
+}
+}
+
+
+
+void ConfigPregunta(void){
+if(indiceDigitoObjetivo == 0 && modoEdicionObjetivo == 1){
+
+EscribeLCD_n8(teclaLeida, 1);
+piezasObjetivo = teclaLeida;
+}else if(indiceDigitoObjetivo == 1 && modoEdicionObjetivo == 1){
+
+EscribeLCD_n8(teclaLeida, 1);
+piezasObjetivo = piezasObjetivo * 10 + teclaLeida;
+OcultarCursor();
+}
+indiceDigitoObjetivo++;
+}
+
+
+
+void Borrar(void){
+if(modoEdicionObjetivo == 1){
+MostrarCursor();
+piezasObjetivo = 0;
+indiceDigitoObjetivo = 0;
+DireccionaLCD(0xC7);
+EscribeLCD_c(1);
+EscribeLCD_c(1);
+DireccionaLCD(0xC7);
+}
 }
